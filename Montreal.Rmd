@@ -1,0 +1,1545 @@
+---
+title: "Coverage_Apr2026"
+author: "Omidreza Sadrmanesh"
+date: "2026-04-05"
+output: html_document
+---
+
+## Packages
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(lubridate) # convenient functions for handling date and time data
+library(sf) # spatially enables the tidyverse package to extend functionality for spatial data
+library(ggspatial) # makes plotting general map elements like base maps, north arrows and scale bars easier
+library(prettymapr) # required dependency for ggspatial to create base maps
+library(tmap) # useful for quick static and interactive maps of sf objects (Quick OSM Basemaps)
+library(mapedit) # for interactive digitilizing
+library(leaflet) # to Constrain editMap() to Your Area
+library(terra)   # For raster data operations
+library(RColorBrewer) # offers a wide variety of color schemes.
+library(viridis) # offers a wide variety of color schemes.
+library(readxl)
+library(ggmap)
+library(tidygeocoder) # for geocoding
+library(writexl)
+library(plotly)
+library(usethis)
+library(stringr) # part of tidyverse; designed to make string manipulation easy and consistent
+#library(mapview)
+library(kableExtra)
+library(webshot2) # for knitting in a table along with kable
+library(ggrepel)  # Helps in avoiding overlapping labels
+library(jsonlite) # extracting lat and long for coordinates in JSON format ({"coordinates":[-123.2152, 49.2639]})
+library(openxlsx) # creating, reading, and editing Excel
+library(htmlwidgets) #interactive leaflets
+library(nngeo) # Fast snapping of points to lines
+```
+
+## Road segments
+
+```{r}
+cl_mont <- st_read('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/centerline/Montreal_Centerline_CapaCITY.shp')
+
+# change the CRS to 26918
+cl_mont <- st_transform(cl_mont, 26918)
+# st_crs(cl_mont)$units
+# View(cl_mont)
+```
+
+## KSI
+
+```{r}
+# all_col_vic_mont <- st_read('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/collisions/Inputs/all_col_victims_mont.geojson')
+# 
+# # Filter it to KSI (major or fatal injuries)
+# table(all_col_vic_mont$severity)
+# ksi_mont <- all_col_vic_mont %>%
+#   mutate(KSI = ifelse(severity %in% c("Fatal", "Major"), 1, 0))
+# 
+# ksi_mont <- ksi_mont %>%
+#   filter(KSI == 1)
+# 
+# # range of date
+# range(ksi_mont$date) # "2012-01-01"--"2021-12-21"
+# 
+# # filter it to 2017-2021
+# ksi_mont <- ksi_mont %>%
+#   filter(date >= "2017-01-01")
+# # View(ksi_mont)
+# # nrow(ksi_mont)
+# 
+# # Number of victims per collision
+# # colnames(ksi_mont)
+# vic_per_col_mont <- ksi_mont %>%
+#   group_by(collision_id) %>%
+#   summarise(n_victims = n_distinct(victim_id)) %>%
+#   ungroup()
+# 
+# # Collision_id = SPVM _ 2018 _ 5494 has 27 KSI victims! drop this as an outlier
+# ksi_mont <- ksi_mont %>%
+#   filter(collision_id != "SPVM _ 2018 _ 5494")
+# 
+# # colnames(ksi_mont)
+# ksi_mont <- ksi_mont %>%
+#    select(collision_id,victim_id,date, geometry)
+# 
+# # change the CRS to 26918
+# ksi_mont <- st_transform(ksi_mont, 26918)
+# # st_crs(ksi_mont)
+# 
+# # Number of KSI injuries in Montreal
+# # nrow(ksi_mont)
+# 
+# # create an ID for each KSI
+# ksi_mont <- ksi_mont %>%
+#   mutate(KSI_ID = row_number())
+# 
+# # Reorder to have KSI_ID as the first column
+# ksi_mont <- ksi_mont %>%
+#   select(KSI_ID, everything())
+# # View(ksi_mont)
+```
+
+Let's see if this ksi dataset belongs to only the city or the island is included as well
+
+```{r}
+# # Import the Island of Montreal boundaries including both the City and 15 municipalities
+# mont_bound <- st_read('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Boundaries/limites-administratives-agglomeration-nad83.geojson')
+# # unique(mont_bound$NOM) # 34
+# 
+# # check to make sure the crs of boundaries is the same as KSI
+# st_crs(ksi_mont) == st_crs(mont_bound) # TRUE
+# 
+# # now let's join them to see each KSI is in which borought
+# mont_bound <- mont_bound %>%
+#   arrange(CODEID) %>%
+#   select(CODEID, NOM)
+# # unique(mont_bound$NOM) # 34
+# 
+# # join to have each KSI point in a polygon
+# ksi_join_bound <-
+#   st_join(ksi_mont, mont_bound, join = st_intersects)
+# # unique(ksi_join_bound$NOM) # 32
+# 
+# # show the summary of it to see how many KSI in each borought
+# ksi_join_bound_summary <- ksi_join_bound %>%
+#   group_by(NOM) %>%
+#   summarise(n = n()) %>%
+#   ungroup()
+# # View(ksi_join_bound_summary)
+# 
+# # Define the vector of independent municipalities present in our dataset
+# independent_municipalities <- c(
+#   "Dorval", "Hampstead", "Dollard-des-Ormeaux", "Mont-Royal",
+#   "Kirkland", "Westmount", "Beaconsfield", "Baie-D'Urfé",
+#   "Côte-Saint-Luc", "L'Île-Dorval", "Montréal-Est", "Montréal-Ouest",
+#   "Sainte-Anne-de-Bellevue", "Senneville", "Pointe-Claire"
+# )
+# 
+# # Subset containing ONLY the independent municipalities
+# non_montreal_ksi <- ksi_join_bound %>%
+#   filter(NOM %in% independent_municipalities)
+# # unique(non_montreal_ksi$NOM)
+# # nrow(non_montreal_ksi) # 130
+# 
+# # As we want to focus on the City of Montreal and data comes from the city of Montreal, we exclude these points and the same thing will be done for counters outside the city of Montreal i.e., drop rows with the KSI_ID in non_montreal_ksi existing in ksi_mont
+# ksi_mont <- ksi_mont %>%
+#   filter(!KSI_ID %in% non_montreal_ksi$KSI_ID)
+# # View(ksi_mont)
+# # nrow(ksi_mont) # 973
+# 
+# # Export this (needed for heatmaps in QGIS)
+# st_write(ksi_mont,
+#          '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/collisions/Outputs/ksi_mont.geojson',
+#          driver = "GeoJSON",
+#          delete_dsn = TRUE)
+# # ksi_mont <- st_read('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/collisions/Outputs/ksi_mont.geojson')
+```
+
+Join KSI with center line
+
+```{r}
+# # Make sure the CRS of both datasets are the same
+# # st_crs(ksi_mont) == st_crs(cl_mont) # TRUE
+# 
+# # View(ksi_mont_cl)
+# 
+# # Find nearest center line
+# nearest_index <- st_nn(ksi_mont, cl_mont, k = 1, returnDist = FALSE)
+# 
+# # Join the nearest cl_month road segment's attributes to collisions
+# ksi_mont_cl <- ksi_mont %>%
+#   mutate(nearest_index = unlist(nearest_index)) %>%
+#   bind_cols(cl_mont[.$nearest_index, ])
+# # View(ksi_mont_cl)
+# 
+# # There are 2 geometries: one for KSI and one for the nearest center line. We want to keep the geometry of KSI, so let's drop the geometry of the nearest center line.
+# # colnames(ksi_mont_cl)
+# 
+# ksi_mont_cl <- ksi_mont_cl %>%
+#   select(-geometry...12) %>%
+#   rename(geometry = geometry...5)
+# # View(ksi_mont_cl)
+# 
+# # Export it
+# st_write(ksi_mont_cl,
+#          '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/collisions/Outputs/ksi_mont_cl.geojson',
+#          driver = "GeoJSON",
+#          delete_dsn = TRUE)
+```
+
+####################################################################################################################################################################
+The above steps in the section of KSI were done to create a new dataset called ksi_mont_cl.geojson (will be read as "ksi_mont" below), which is the KSI collisions in Montreal from 2017 to 2022, with the nearest center line road segment's attributes joined to it. Now we can read this file and continue with the analysis. Thus, to save time in running the codes, I commented our the above codes and just read the file ksi_mont.
+####################################################################################################################################################################
+
+```{r}
+ksi_mont <- st_read('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/collisions/Outputs/ksi_mont_cl.geojson')
+# View(ksi_mont)
+# colnames(ksi_mont)
+# nrow(ksi_mont)
+
+# Using floor_date, change the format of date to be the first day of the month, and create a new column called collision_month
+ksi_mont <- ksi_mont %>%
+  mutate(collision_month = floor_date(date, "month"))
+
+# filter it for relevant columns
+# colnames(ksi_mont)
+ksi_mont <- ksi_mont %>% 
+  select(KSI_ID,Road_UID, collision_month, geometry)
+```
+
+Create study_start and study_end based on the range of collision_month in ksi_tor (you will need this for expected coverage)
+
+```{r}
+study_start <- min(ksi_mont$collision_month)
+study_end   <- max(ksi_mont$collision_month)
+# study_start
+# study_end
+```
+
+Calculate m_j = number of KSIs in segment-month j, then sum(m_j^2) across all segment-months for the variance calculation
+
+```{r}
+ksi_mont_seg_month <- ksi_mont %>%
+  st_drop_geometry() %>%
+  group_by(Road_UID, collision_month) %>%
+  summarise(m_j = n(), .groups = "drop")
+# View(ksi_mont_seg_month)
+
+# Calculate 
+sum_mj_sq <- sum(ksi_mont_seg_month$m_j^2)
+cat("Sum of m_j^2 across all segment-months:", sum_mj_sq, "\n")
+```
+
+Create time windows for KSI 
+
+Create monthly windows so for 1,2,and 3 months will cover 3, 5, and 7 months respectively (because we want to cover 1 month before and after the collision month, so in total 3 months for 1M window because the month of collision will also be considered)
+
+```{r}
+ksi_mont <- ksi_mont %>%
+  mutate(
+    window_3M_start = collision_month %m-% months(1),
+    window_3M_end   = collision_month %m+% months(1),
+
+    window_5M_start = collision_month %m-% months(2),
+    window_5M_end   = collision_month %m+% months(2),
+
+    window_7M_start = collision_month %m-% months(3),
+    window_7M_end   = collision_month %m+% months(3)
+  )
+# View(ksi_mont)
+```
+
+## Temporary Counters
+
+Because the location of these counters have been mentioned excatly at intersections, we do not need to move them to the nearest intersection like Toronto.
+
+```{r}
+# temp_mont_org <- read_csv('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/counters/temporary/Inputs/volume_mont_unique_1425.csv')
+# # View(temp_mont_org)
+# 
+# # Keep necessary columns
+# temp_mont <- temp_mont_org %>%
+#   select(Intersection_ID, Intersection_Name, Date, Month, Year, Longitude, Latitude)
+# # View(temp_mont)
+# 
+# # Because the start of a full year of Vision Zero is 2017 in Montreal, we want the locations of counters between year = 2016, month = 10 and year = 2023, month = 3 (collisions till december 2022)
+# temp_mont <- temp_mont %>%
+#   filter(Date >= as.Date("2016-10-01") & Date <= as.Date("2023-3-31"))
+# # View(temp_mont)
+# 
+# # Make it a spatial object and transform to the same CRS as cl_mont
+# temp_mont <- st_as_sf(temp_mont, coords = c("Longitude", "Latitude"), crs = 4326)
+# temp_mont <- st_transform(temp_mont, 26918)
+# # st_crs(temp_mont)
+# 
+# # Give each row of tmc dataset a unique ID (the same as KSI) so we can properly filter out those counters outside the City of Montreal 
+# temp_mont <- temp_mont %>% 
+# mutate(TMC_ID = row_number())
+# 
+# temp_mont <- temp_mont %>% 
+#   select(TMC_ID, everything())
+```
+
+Let's see if these counters are only in the city of Montreal or the isalnd as well (the same as KSI)
+
+```{r}
+# mont_bound <- st_read('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Boundaries/limites-administratives-agglomeration-nad83.geojson')
+# # unique(mont_bound$NOM) # 34
+# 
+# # check to make sure the crs of boundaries is the same as tmc counters
+# st_crs(temp_mont) == st_crs(mont_bound) # TRUE
+# 
+# # now let's join them to see each counter is in which borought 
+# mont_bound <- mont_bound %>% 
+#   arrange(CODEID) %>% 
+#   select(CODEID, NOM)
+# # unique(mont_bound$NOM) # 34
+# 
+# # join to have each counter point in a polygon
+# tmc_join_bound <- 
+#   st_join(temp_mont, mont_bound, join = st_intersects)
+# # unique(ksi_join_bound$NOM) # 32
+# 
+# # show the summary of it to see how many counters in each borought
+# tmc_join_bound_summary <- tmc_join_bound %>% 
+#   group_by(NOM) %>% 
+#   summarise(n = n()) %>% 
+#   ungroup()
+# # View(tmc_join_bound_summary)
+# 
+# # Define the vector of independent municipalities present in our dataset
+# independent_municipalities <- c(
+#   "Dorval", "Hampstead", "Dollard-des-Ormeaux", "Mont-Royal", 
+#   "Kirkland", "Westmount", "Beaconsfield", "Baie-D'Urfé", 
+#   "Côte-Saint-Luc", "L'Île-Dorval", "Montréal-Est", "Montréal-Ouest", 
+#   "Sainte-Anne-de-Bellevue", "Senneville", "Pointe-Claire"
+# )
+# 
+# # Subset containing ONLY the independent municipalities
+# non_montreal_counters <- tmc_join_bound %>% 
+#   filter(NOM %in% independent_municipalities)
+# # unique(non_montreal_counters$NOM)
+# # nrow(non_montreal_counters) # 117 
+# 
+# # As we want to focus on the City of Montreal and data comes from the city of Montreal, we exclude these points and the same thing will be done for counters outside the city of Montreal i.e., drop rows with the TMC_ID in non_montreal_ksi existing in ksi_mont
+# temp_mont <- temp_mont %>% 
+#   filter(!TMC_ID %in% non_montreal_counters$TMC_ID)
+# # View(temp_mont)
+# # nrow(temp_mont) # 3160
+# 
+# # Export this (needed for heatmaps in QGIS)
+# st_write(temp_mont,
+#          '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/counters/temporary/Outputs/temp_mont.geojson',
+#          driver = "GeoJSON",
+#          delete_dsn = TRUE)
+```
+
+Make a buffer of 10 meters around each counter and then joining with cl_mont
+
+```{r}
+# temp_mont_buf <- st_buffer(temp_mont, dist = 10)
+# temp_mont_final <- st_join(cl_mont, temp_mont_buf, join = st_intersects, left = FALSE)
+# # View(temp_mont_buf)
+# # View(temp_mont_final)
+# # range(temp_mont_final$Date)
+# 
+# # Rename Intersection_Name to location_name for consistency with Toronto dataset
+# temp_mont_final <- temp_mont_final %>%
+#   rename(location_name = Intersection_Name)
+# 
+# st_write(temp_mont_final, 
+#          '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/counters/temporary/Outputs/temp_cl_mont.geojson', 
+#          driver = "GeoJSON", 
+#          delete_dsn = TRUE)
+```
+
+############################################################################################################################################
+
+*The above chunks of codes were done to create a new dataset called "temp_mont_final.geojson" (will be read as "temp_mont" below), which is the temporary counters in Montreal from 2016/10 to 2023/03, with the nearest center line road segment's attributes joined to it. Now we can read this file and continue with the analysis. Thus, to save time in running the codes, I commented out the above codes and just read the file temp_mont*
+
+############################################################################################################################################
+
+```{r}
+temp_mont <- st_read('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/counters/temporary/Outputs/temp_cl_mont.geojson')
+# View(temp_mont)
+
+# Create "month" from "count_date" as we want to have a column in the format of date, and we don't care about the exact count date, and only want a column in the format of date
+temp_mont <- temp_mont %>%
+  st_drop_geometry() %>%
+  mutate(
+    count_date = as.Date(Date),
+    month = floor_date(Date, "month"))
+
+# Keep relevant columns
+temp_mont <- temp_mont %>%
+  select(Road_UID, location_name, month)
+# View(temp_mont)
+```
+
+Create a new dataset including unique temporary counters, with a unique ID for each of them, and a column specifying the type of them
+
+```{r}
+temp_mont_monthly <- temp_mont %>% 
+  distinct()
+# View(temp_mont_monthly)
+# colnames(temp_mont_monthly)
+
+# unique temporary counters
+temp_mont_unique <- temp_mont_monthly %>%
+  distinct(location_name, .keep_all = TRUE)
+# View(temp_mont_unique)
+
+# Drop Road_UID as we don't need it for the coverage analysis
+temp_mont_unique <- temp_mont_unique %>% 
+  select(-Road_UID)
+# View(temp_mont_unique)
+
+# create a new ID for each unique counter location
+temp_mont_unique <- temp_mont_unique %>%
+  mutate(counter_id = row_number())
+# View(temp_mont_unique)
+
+# Reorder columns to have counter_id first and mutate counter_type to be "temporary"
+temp_mont_unique <- temp_mont_unique %>%
+  mutate(counter_type = "temporary") %>%
+  group_by(location_name) %>%
+  mutate(
+    first_count_month = min(month),
+    last_count_month  = max(month)
+  ) %>%
+  ungroup() %>% 
+  select(counter_id, everything())
+# View(temp_mont_unique)  
+```
+
+## Create c_P_t and c_R_t (from these codes: COVERAGE_JUL26.Rmd)
+
+Create a dataframe of all months in the study period, which will be used to ensure that we have a row for each month in the final monthly deployment dataset, even if there are no new permanent counters or active counters in that month.
+
+```{r}
+months_df <- tibble(
+  month = seq(
+    floor_date(study_start, "month"),
+    floor_date(study_end, "month"),
+    by = "1 month"
+  )
+)
+# View(months_df)
+```
+
+### Step A. Clean counter data
+Create start_month and end_month for each counter, and filter out any counters that don't have a valid counter_id, counter_type, start_month, or end_month, or that are not active during the study period.
+
+```{r}
+# View(temp_mont_unique)
+counter_clean <- temp_mont_unique %>%
+  mutate(
+    start_month = floor_date(as.Date(first_count_month), "month"),
+    end_month = if_else(
+      is.na(last_count_month),
+      floor_date(study_end, "month"),
+      floor_date(as.Date(last_count_month), "month")
+    )
+  ) %>%
+  filter(
+    !is.na(counter_id),
+    !is.na(counter_type),
+    !is.na(start_month),
+    start_month <= floor_date(study_end, "month"),
+    end_month >= floor_date(study_start, "month")
+  )
+# View(counter_clean)
+```
+
+### Step B. Expand counters into active counter-months
+Here we expand the counter data into a long format where each row represents a counter active in a specific month. This will allow us to count the number of active temporary counters in each month.
+
+```{r}
+# View(counter_clean)
+
+counter_months <- counter_clean %>%
+  rowwise() %>%
+  mutate(
+    month = list(seq(start_month, end_month, by = "1 month"))
+  ) %>%
+  unnest(month) %>%
+  ungroup() %>%
+  filter(
+    month >= floor_date(study_start, "month"),
+    month <= floor_date(study_end, "month")
+  )
+# View(counter_months)
+```
+
+### Step C. Count active temporary counters each month
+      c_R_t = active temporary/rotating counters in month t
+
+```{r}
+monthly_active_counters <- counter_months %>%
+  group_by(month, counter_type) %>%
+  summarise(
+    c_t = n_distinct(counter_id),
+    .groups = "drop"
+  ) %>%
+  complete(
+    month = months_df$month,
+    counter_type = c("temporary"),
+    fill = list(c_t = 0)
+  ) %>%
+  pivot_wider(
+    names_from = counter_type,
+    values_from = c_t,
+    names_prefix = "c_",
+    values_fill = 0
+  ) %>%
+  rename(
+    c_R_t = c_temporary
+  )
+# View(monthly_active_counters)
+```
+
+### Step D. Final monthly deployment dataset
+
+```{r}
+monthly_counter_deployment <- months_df %>%
+  left_join(monthly_active_counters, by = "month") %>%
+  mutate(
+    c_R_t = replace_na(c_R_t, 0)
+  ) %>%
+  arrange(month)
+# View(monthly_counter_deployment)
+```
+
+## Observed Coverage 
+
+Calculate the coverage by temporary counters for each KSI collision by checking if there is any counter on the same road segment in the same month or within the defined windows (±1M, ±2M, ±3M) (1= covered, 0 = not covered)
+
+```{r}
+# View(temp_mont_monthly)
+# colnames(temp_mont_monthly)
+# View(ksi_mont)
+
+ksi_mont_cov_temp <- ksi_mont %>%
+  rowwise() %>%
+  mutate(
+    temp_3M = as.integer(any(
+      temp_mont_monthly$Road_UID == Road_UID &
+      temp_mont_monthly$month >= window_3M_start &
+      temp_mont_monthly$month <= window_3M_end
+    )),
+
+    temp_5M = as.integer(any(
+      temp_mont_monthly$Road_UID == Road_UID &
+      temp_mont_monthly$month >= window_5M_start &
+      temp_mont_monthly$month <= window_5M_end
+    )),
+
+    temp_7M = as.integer(any(
+      temp_mont_monthly$Road_UID == Road_UID &
+      temp_mont_monthly$month >= window_7M_start &
+      temp_mont_monthly$month <= window_7M_end
+    ))
+  ) %>%
+  ungroup()
+# View(ksi_mont_cov_temp)
+
+# Export this for analysis of Road Types
+write_csv(ksi_mont_cov_temp, "/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/collisions/Outputs/ksi_mont_cov_RoadClass.csv")
+```
+
+Calculate observed coverage by temporary counters for each window (±1M, ±2M, ±3M) (95% CI)
+
+```{r}
+total_ksi <- nrow(ksi_mont)
+# total_ksi
+
+temp_obs_3M_coverage <- sum(ksi_mont_cov_temp$temp_3M, na.rm = TRUE)
+temp_obs_3M_pct <- round(100 * temp_obs_3M_coverage / total_ksi, 2)
+temp_obs_3M_CI <- binom.test(temp_obs_3M_coverage, total_ksi)$conf.int * 100
+
+temp_obs_5M_coverage <- sum(ksi_mont_cov_temp$temp_5M, na.rm = TRUE)
+temp_obs_5M_pct <- round(100 * temp_obs_5M_coverage / total_ksi, 2)
+temp_obs_5M_CI <- binom.test(temp_obs_5M_coverage, total_ksi)$conf.int * 100
+
+temp_obs_7M_coverage <- sum(ksi_mont_cov_temp$temp_7M, na.rm = TRUE)
+temp_obs_7M_pct <- round(100 * temp_obs_7M_coverage / total_ksi, 2)
+temp_obs_7M_CI <- binom.test(temp_obs_7M_coverage, total_ksi)$conf.int * 100
+```
+
+Make a table for average overall observed coverage by temporary counters
+
+```{r}
+temp_obs_results_average <- tibble(
+  Window = c("±1 month (w=3)", "±2 months (w=5)", "±3 months (w=7)"),
+  
+  Observed_pct = c(temp_obs_3M_pct, temp_obs_5M_pct, temp_obs_7M_pct),
+  CI_lower_pct_obs = c(temp_obs_3M_CI[1], temp_obs_5M_CI[1], temp_obs_7M_CI[1]),
+  CI_upper_pct_obs = c(temp_obs_3M_CI[2], temp_obs_5M_CI[2], temp_obs_7M_CI[2])
+)
+# View(temp_obs_results_average)
+```
+
+*Yearly* observed coverage by temporary counters
+
+```{r}
+# View(ksi_mont_cov_temp)
+
+temp_obs_results_yearly <- ksi_mont_cov_temp %>%
+  group_by(year = year(collision_month)) %>%
+   summarise(
+       total_ksi = n(),
+       
+       temp_obs_3M_coverage = sum(temp_3M, na.rm = TRUE),
+       temp_obs_3M_pct = round(100 * temp_obs_3M_coverage / total_ksi, 2),
+       temp_obs_3M_CI_lower = binom.test(temp_obs_3M_coverage, total_ksi)$conf.int[1] * 100,
+       temp_obs_3M_CI_upper = binom.test(temp_obs_3M_coverage, total_ksi)$conf.int[2] * 100,
+       
+       temp_obs_5M_coverage = sum(temp_5M, na.rm = TRUE),
+       temp_obs_5M_pct = round(100 * temp_obs_5M_coverage / total_ksi, 2),
+       temp_obs_5M_CI_lower = binom.test(temp_obs_5M_coverage, total_ksi)$conf.int[1] * 100,
+       temp_obs_5M_CI_upper = binom.test(temp_obs_5M_coverage, total_ksi)$conf.int[2] * 100,
+       
+       temp_obs_7M_coverage = sum(temp_7M, na.rm = TRUE),
+       temp_obs_7M_pct = round(100 * temp_obs_7M_coverage / total_ksi, 2),
+       temp_obs_7M_CI_lower = binom.test(temp_obs_7M_coverage, total_ksi)$conf.int[1] * 100,
+       temp_obs_7M_CI_upper = binom.test(temp_obs_7M_coverage, total_ksi)$conf.int[2] * 100) %>% 
+  
+  select(year, total_ksi,
+          temp_obs_3M_pct, temp_obs_3M_CI_lower, temp_obs_3M_CI_upper,
+          temp_obs_5M_pct, temp_obs_5M_CI_lower, temp_obs_5M_CI_upper,
+          temp_obs_7M_pct, temp_obs_7M_CI_lower, temp_obs_7M_CI_upper) 
+# View(temp_obs_results_yearly)
+```
+
+Reshape to long format
+
+```{r}
+temp_obs_results_yearly <- temp_obs_results_yearly %>%
+  st_drop_geometry() %>% 
+  pivot_longer(
+    cols = -c(year, total_ksi),
+    names_to = c("coverage_type", "window_code", "metric"),
+    names_pattern = "(perm|temp|any)_obs_(3M|5M|7M)_(pct|CI_lower|CI_upper)",
+    values_to = "value"
+  ) %>%
+  pivot_wider(names_from = metric, values_from = value) %>%
+  mutate(
+    coverage_type = recode(coverage_type,
+                            perm = "permanent",
+                            temp = "temporary",
+                            any  = "either"),
+    Window = recode(window_code,
+                     "3M" = "±1 month (w=3)",
+                     "5M" = "±2 months (w=5)",
+                     "7M" = "±3 months (w=7)")
+  ) %>%
+  rename(Observed_pct = pct, CI_lower_pct = CI_lower, CI_upper_pct = CI_upper) %>%
+  select(year, total_ksi, Window, Observed_pct, CI_lower_pct, CI_upper_pct, coverage_type) %>%
+  arrange(year, coverage_type, Window)
+```
+
+## Expected Coverage
+
+S = total number of road segments in a city, assumed constant over the study period.
+KSI_total = total number of KSI
+For each month t∈{1,…,T}:
+  c_t : number of deployed counters
+  g_t : average number of segments covered by a single counter. To calculate g_t: u_t/c_t, where u_t is the unique road segments covered by the counters.
+  
+
+### STEP 1: Calculate KSI_total, g_t, S, unique number of permanent and temporary counters
+
+#### KSI_total
+
+```{r}
+KSI_total <- nrow(ksi_mont) 
+KSI_total
+```
+
+#### Calculate g_t for Temporary Counters
+
+```{r}
+# View(temp_mont_monthly)
+covered_per_month_temp <- temp_mont_monthly %>%
+  group_by(month) %>%
+  summarise(
+    c_t = n_distinct(location_name),
+    u_t = n_distinct(Road_UID),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    g_t  = if_else(c_t == 0, 0, u_t / c_t)
+  )
+# View(covered_per_month_temp)
+```
+
+```{r}
+covered_per_month_temp <- months_df %>%
+  left_join(covered_per_month_temp, by = "month") %>%
+  mutate(
+    c_t  = replace_na(c_t,  0),
+    u_t  = replace_na(u_t,  0),
+    g_t  = replace_na(g_t,  0)
+  )
+# View(covered_per_month_temp)
+```
+
+Mean of g_t across all months where at least one counter was active
+
+```{r}
+g_t_temp <- covered_per_month_temp %>%
+  filter(c_t > 0) %>%
+  summarise(g_t_mean = mean(g_t, na.rm = TRUE)) %>%
+  pull(g_t_mean)
+cat("Mean g_t for temporary counters:", round(g_t_temp, 3), "\n")
+```
+
+#### S
+Total number of road segments
+
+```{r}
+seg_mont <- nrow(cl_mont) #32862
+S <- seg_mont 
+# S
+```
+
+#### Unique number of temporary counters
+
+```{r}
+n_temp_total <- nrow(temp_mont_unique)
+cat("Total unique temporary counters:", n_temp_total, "\n")
+```
+
+
+### STEP 2. Logit-transformed CI for a proportion p_hat with SE on the proportion scale
+
+```{r}
+logit_ci <- function(p_hat, se_p, conf_level = 0.95) {
+  z <- qnorm(1 - (1 - conf_level) / 2)
+  
+  # avoid issues exactly at 0 or 1
+  eps <- 1e-8
+  p_hat_adj <- min(max(p_hat, eps), 1 - eps)
+  
+  logit_p  <- qlogis(p_hat_adj)
+  se_logit <- se_p / (p_hat_adj * (1 - p_hat_adj))
+  
+  lower <- plogis(logit_p - z * se_logit)
+  upper <- plogis(logit_p + z * se_logit)
+  
+  c(lower = lower, upper = upper)
+}
+```
+
+### STEP 3. MONTHLY INPUTS
+
+```{r}
+# View(monthly_counter_deployment)
+monthly_input <- monthly_counter_deployment %>%
+  arrange(month) %>%
+  mutate(
+    t    = row_number(),
+    year = year(month),
+    gR_t = g_t_temp
+  )
+# View(monthly_input)
+```
+
+### STEP 4. MONTHLY COVERAGE PROBABILITIES
+
+Permanent counters remain active after installation:
+$qP_t = 1 - prod_{m<=t} (1 - gP_m/S)^(new_perm_m)$
+
+Temporary counters: 
+$qR_t = 1 - (1 - gR_t/S)^(cR_t)$
+
+```{r}
+# View(monthly_input)
+monthly_cov <- monthly_input %>%
+  mutate(
+    qR_t = 1 - (1 - gR_t / S) ^ c_R_t
+  )
+# View(monthly_cov)
+```
+
+### STEP 5. REAL KSI CLUSTER TABLE
+
+Your existing table (ksi_tor_seg_month) has: Road_UID, collision_month, m_j
+Rename Road_UID to segment_id, and collision_month to month. Keep m_j as is.
+
+```{r}
+# View(ksi_mont_seg_month)
+# different names for difference cities for ksi_...
+cluster_tbl <- ksi_mont_seg_month %>%
+  mutate(
+    month = floor_date(as.Date(collision_month), "month"),
+    year  = year(month),
+    segment_id = Road_UID
+  ) %>%
+  select(
+    month,
+    year,
+    segment_id,
+    m_j
+  ) %>%
+  arrange(month, segment_id)
+
+# Diagnostics
+cat("Total KSI events =", sum(cluster_tbl$m_j), "\n")
+cat("Number of segment-month clusters =", nrow(cluster_tbl), "\n")
+cat("Clusters with m_j > 1 =", sum(cluster_tbl$m_j > 1), "\n")
+
+# View(cluster_tbl)
+```
+
+### STEP 6. COMPUTE WINDOW-SPECIFIC PROBABILITIES BY COUNTER TYPE
+
+Uses real monthly counter deployment from monthly_cov and real KSI segment-month clusters from cluster_tbl.
+p_temp_t:probability of temporary-counter coverage at least once within the window.
+
+```{r}
+compute_pwt <- function(monthly_cov, w = 3) {
+  
+  stopifnot(w %in% c(3, 5, 7))
+  
+  Tm <- nrow(monthly_cov)
+  half_w <- (w - 1) / 2
+  
+  p_temp_t <- numeric(Tm)
+  
+  for (i in 1:Tm) {
+    
+    idx <- max(1, i - half_w):min(Tm, i + half_w)
+    
+    
+    # Temporary counters:
+    # Rotating/temporary counters create new opportunities across months.
+    p_temp_t[i] <- 1 - prod(1 - monthly_cov$qR_t[idx], na.rm = TRUE)
+  }
+  
+  monthly_cov %>%
+    mutate(
+      w = w,
+      p_temp_t = p_temp_t
+    )
+}
+```
+
+### STEP 7. SUMMARISE COVERAGE FOR ONE PROBABILITY COLUMN
+
+Uses real segment-month clusters:
+$E[C]   = sum_j m_j * p_t$
+$Var(C) = sum_j p_t * (1 - p_t) * m_j^2$
+
+where:
+   m_j = number of KSI events in segment-month cluster j
+   p_t = expected coverage probability for that month/window/type
+
+```{r}
+summarise_one_type <- function(cluster_tbl2, prob_col, type_label, conf_level = 0.95) {
+  
+  annual_res <- cluster_tbl2 %>%
+    group_by(year) %>%
+    summarise(
+      E_C   = sum(m_j * .data[[prob_col]], na.rm = TRUE),
+      Var_C = sum(.data[[prob_col]] * (1 - .data[[prob_col]]) * (m_j^2), na.rm = TRUE),
+      K     = sum(m_j, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    rowwise() %>%
+    mutate(
+      p_hat = E_C / K,
+      se_p  = sqrt(Var_C) / K,
+      coverage_pct = 100 * p_hat,
+      ci_obj = list(logit_ci(p_hat, se_p, conf_level)),
+      ci_lower = 100 * ci_obj["lower"],
+      ci_upper = 100 * ci_obj["upper"],
+      type = type_label
+    ) %>%
+    ungroup() %>%
+    select(
+      type,
+      year,
+      K,
+      E_C,
+      Var_C,
+      coverage_pct,
+      ci_lower,
+      ci_upper
+    )
+  
+  # Overall pooled estimate
+  total_E_C   <- sum(annual_res$E_C, na.rm = TRUE)
+  total_Var_C <- sum(annual_res$Var_C, na.rm = TRUE)
+  total_K     <- sum(annual_res$K, na.rm = TRUE)
+  
+  overall_p_hat <- total_E_C / total_K
+  overall_se_p  <- sqrt(total_Var_C) / total_K
+  overall_ci    <- logit_ci(overall_p_hat, overall_se_p, conf_level)
+  
+  overall_res <- tibble(
+    type = type_label,
+    total_K = total_K,
+    total_E_C = total_E_C,
+    total_Var_C = total_Var_C,
+    pooled_coverage_pct = 100 * overall_p_hat,
+    ci_lower = 100 * overall_ci["lower"],
+    ci_upper = 100 * overall_ci["upper"]
+  )
+  
+  list(
+    annual = annual_res,
+    overall = overall_res
+  )
+}
+
+pwt_tbl <- compute_pwt(monthly_cov, w = 3) %>%
+  select(month, year, p_temp_t)
+
+cluster_tbl2 <- cluster_tbl %>%
+  left_join(pwt_tbl, by = c("month", "year"))
+
+res_temp <- summarise_one_type(cluster_tbl2, "p_temp_t", "temporary")
+# res_temp
+```
+
+### STEP 8. COMPUTE FULL SUMMARY FOR ONE WINDOW
+
+```{r}
+compute_coverage_summary <- function(monthly_cov, cluster_tbl, w = 3, conf_level = 0.95) {
+  
+  # Month-specific probabilities by counter type
+  pwt_tbl <- compute_pwt(monthly_cov, w) %>%
+    select(month, year, p_temp_t)
+  
+  # Attach month-specific probabilities to each real segment-month cluster
+  cluster_tbl2 <- cluster_tbl %>%
+    left_join(pwt_tbl, by = c("month", "year"))
+  
+  # Check for unmatched KSI months
+  unmatched_months <- cluster_tbl2 %>%
+    filter(is.na(p_temp_t)) %>%
+    distinct(month, year)
+  
+  if (nrow(unmatched_months) > 0) {
+    warning(
+      "Some KSI segment-month clusters did not match monthly_cov. ",
+      "Check that month formats and study periods are aligned."
+    )
+    print(unmatched_months)
+  }
+  
+  # Summarise 
+  res_temp <- summarise_one_type(cluster_tbl2, "p_temp_t", "temporary", conf_level)
+  
+  annual_all_types <- bind_rows(
+    res_temp$annual
+  ) %>%
+    arrange(type, year)
+  
+  overall_all_types <- bind_rows(
+    res_temp$overall
+  ) %>%
+    mutate(w = w) %>%
+    select(w, everything())
+  
+  list(
+    monthly_pwt = pwt_tbl,
+    cluster_table = cluster_tbl2,
+    annual_by_type = annual_all_types,
+    overall_by_type = overall_all_types,
+    unmatched_months = unmatched_months
+  )
+}
+```
+
+### STEP 9. RUN FOR w = 3, 5, 7
+
+```{r}
+res_w3 <- compute_coverage_summary(monthly_cov, cluster_tbl, w = 3)
+res_w5 <- compute_coverage_summary(monthly_cov, cluster_tbl, w = 5)
+res_w7 <- compute_coverage_summary(monthly_cov, cluster_tbl, w = 7)
+
+# Make them dataframes
+temp_exp_res_3_avg <- as.data.frame(res_w3$overall_by_type)
+temp_exp_res_5_avg <- as.data.frame(res_w5$overall_by_type)
+temp_exp_res_7_avg <- as.data.frame(res_w7$overall_by_type)
+
+# BInd them together
+temp_exp_res_avg <- bind_rows(temp_exp_res_3_avg,
+                              temp_exp_res_5_avg,
+                              temp_exp_res_7_avg)
+
+# the same thing for Yearly
+temp_exp_res_3_yr <- as.data.frame(res_w3$annual_by_type)
+temp_exp_res_5_yr <- as.data.frame(res_w5$annual_by_type)
+temp_exp_res_7_yr <- as.data.frame(res_w7$annual_by_type)
+
+# Before binding them together, create a "W" (window) column, specifying the length of window of each of these datasets and fill all rows with appropriate window lengths
+temp_exp_res_3_yr <- temp_exp_res_3_yr %>% mutate(w = 3)
+temp_exp_res_5_yr <- temp_exp_res_5_yr %>% mutate(w = 5)
+temp_exp_res_7_yr <- temp_exp_res_7_yr %>% mutate(w = 7)
+  
+temp_exp_res_yr <- bind_rows(temp_exp_res_3_yr,
+                                         temp_exp_res_5_yr,
+                                         temp_exp_res_7_yr)
+```
+
+### STEP 10. DISPLAY RESULTS
+
+```{r}
+cat("====================================================\n")
+cat("WINDOW w = 3 MONTHS\n")
+cat("====================================================\n")
+
+cat("\nAnnual coverage by counter type:\n")
+print(res_w3$annual_by_type)
+
+cat("\nOverall coverage by counter type:\n")
+print(res_w3$overall_by_type)
+
+
+cat("\n====================================================\n")
+cat("WINDOW w = 5 MONTHS\n")
+cat("====================================================\n")
+
+cat("\nAnnual coverage by counter type:\n")
+print(res_w5$annual_by_type)
+
+cat("\nOverall coverage by counter type:\n")
+print(res_w5$overall_by_type)
+
+
+cat("\n====================================================\n")
+cat("WINDOW w = 7 MONTHS\n")
+cat("====================================================\n")
+
+cat("\nAnnual coverage by counter type:\n")
+print(res_w7$annual_by_type)
+
+cat("\nOverall coverage by counter type:\n")
+print(res_w7$overall_by_type)
+```
+
+### STEP 11. DIAGNOSTICS USING REAL DATA
+
+```{r}
+cat("\n====================================================\n")
+cat("REAL DATA DIAGNOSTICS\n")
+cat("====================================================\n")
+
+cat("\nTotal real KSI events =", sum(cluster_tbl$m_j, na.rm = TRUE), "\n")
+cat("Number of segment-month clusters =", nrow(cluster_tbl), "\n")
+cat("Clusters with m_j > 1 =", sum(cluster_tbl$m_j > 1, na.rm = TRUE), "\n")
+cat("Number of months in monthly_cov =", n_distinct(monthly_cov$month), "\n")
+cat("Number of KSI months in cluster_tbl =", n_distinct(cluster_tbl$month), "\n")
+
+cat("\nKSI events by month, first 12 months:\n")
+
+cluster_tbl %>%
+  group_by(year, month) %>%
+  summarise(
+    total_ksi_month = sum(m_j, na.rm = TRUE),
+    n_clusters = n(),
+    max_cluster_size = max(m_j, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(month) %>%
+  head(12) %>%
+  print()
+
+
+cat("\nMonthly counter deployment and coverage probabilities, first 12 months:\n")
+
+monthly_cov %>%
+  select(
+    month,
+    year,
+    c_R_t,
+    qR_t
+  ) %>%
+  arrange(month) %>%
+  head(12) %>%
+  print()
+
+
+cat("\nCheck for unmatched months after joining KSI clusters to coverage probabilities:\n")
+
+bind_rows(
+  res_w3$unmatched_months %>% mutate(w = 3),
+  res_w5$unmatched_months %>% mutate(w = 5),
+  res_w7$unmatched_months %>% mutate(w = 7)
+) %>%
+  arrange(w, month) %>%
+  print()
+```
+
+### FIGURE 1: Overall expected coverage by window and counter type
+
+```{r}
+overall_plot_df <- bind_rows(
+  res_w3$overall_by_type,
+  res_w5$overall_by_type,
+  res_w7$overall_by_type
+) %>%
+  mutate(
+    type = recode(
+      type,
+      temporary = "Temporary"
+    ),
+    w = factor(w, levels = c(3, 5, 7),
+               labels = c("3 months", "5 months", "7 months"))
+  )
+
+ggplot(
+  overall_plot_df,
+  aes(
+    x = w,
+    y = pooled_coverage_pct,
+    color = type,
+    group = type
+  )
+) +
+  geom_point(size = 3) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(
+    aes(ymin = ci_lower, ymax = ci_upper),
+    width = 0.12,
+    linewidth = 0.7
+  ) +
+  labs(
+    title = "Overall Expected Coverage by Window Length",
+    x = "Time window",
+    y = "Expected coverage (%)",
+    color = "Counter type"
+  ) +
+  theme_minimal()
+```
+
+### FIGURE 2: Annual expected coverage by window and counter type
+
+```{r}
+annual_plot_df <- bind_rows(
+  res_w3$annual_by_type %>% mutate(w = 3),
+  res_w5$annual_by_type %>% mutate(w = 5),
+  res_w7$annual_by_type %>% mutate(w = 7)
+) %>%
+  mutate(
+    type = recode(
+      type,
+      temporary = "Temporary"
+    ),
+    w = factor(w, levels = c(3, 5, 7),
+               labels = c("3 months", "5 months", "7 months"))
+  )
+
+ggplot(
+  annual_plot_df,
+  aes(
+    x = year,
+    y = coverage_pct,
+    color = type,
+    group = type
+  )
+) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2.3) +
+  geom_errorbar(
+    aes(ymin = ci_lower, ymax = ci_upper),
+    width = 0.15,
+    linewidth = 0.5
+  ) +
+  facet_wrap(~ w) +
+  labs(
+    title = "Annual Expected Coverage by Counter Type and Window Length",
+    x = "Year",
+    y = "Expected coverage (%)",
+    color = "Counter type"
+  ) +
+  theme_minimal()
+```
+
+## Final Outputs
+
+Overall
+
+```{r}
+colnames(temp_obs_results_average)
+colnames(temp_exp_res_avg)
+
+# Rename these columns in "combined_exp_results_average", so they match with "combined_obs_results_average" and select only these needed 5 columns
+temp_exp_res_avg <- temp_exp_res_avg %>% 
+  rename(Window = w,
+         Exp_pct = pooled_coverage_pct, 
+         CI_lower_pct = ci_lower,
+         CI_upper_pct = ci_upper, 
+         coverage_type = type) %>% 
+  select(Window,Exp_pct,CI_lower_pct,CI_upper_pct,coverage_type)
+
+# Check out Window
+unique(temp_obs_results_average$Window)
+unique(temp_exp_res_avg$Window)
+
+# Rename for consistency
+temp_exp_res_avg <- temp_exp_res_avg %>% 
+  mutate(Window = recode(Window, 
+                         "3" = "±1 month (w=3)", 
+                         "5" = "±2 months (w=5)",
+                         "7" = "±3 months (w=7)"
+                        ))
+  
+# Add "Obs" or "Exp" to confidence intervals' names of columns for clarity
+temp_exp_res_avg <- temp_exp_res_avg %>% 
+  rename( CI_lower_pct_exp = CI_lower_pct, 
+          CI_upper_pct_exp = CI_upper_pct)
+
+# Make all numbers in 2 decimal points
+temp_obs_results_average$CI_lower_pct_obs <- round(temp_obs_results_average$CI_lower_pct_obs, 2)
+temp_obs_results_average$CI_upper_pct_obs <- round(temp_obs_results_average$CI_upper_pct_obs, 2)
+
+temp_exp_res_avg$Exp_pct <- round(temp_exp_res_avg$Exp_pct, 2)
+temp_exp_res_avg$CI_lower_pct_exp <- round(temp_exp_res_avg$CI_lower_pct_exp,2)
+temp_exp_res_avg$CI_upper_pct_exp <- round(temp_exp_res_avg$CI_upper_pct_exp,2) 
+
+# Join them
+temp_results_average_final <- temp_obs_results_average %>% 
+  full_join(temp_exp_res_avg, by = "Window")
+
+# Reorder to have "coverage_type" right after "Window"
+temp_results_average_final <- temp_results_average_final %>% 
+  select(Window, coverage_type, everything())
+```
+
+Export this
+
+```{r}
+write_csv(temp_results_average_final, '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/final outputs/temp_results_average_final_mont.csv')
+```
+
+Annual 
+
+We should do the same changes plus:
+    - keeping "K" (the number of KSI per year) and "year" in combined_exp_results_yearly
+    - Rename year and total_KSI for consistency
+
+```{r}
+colnames(temp_obs_results_yearly)
+colnames(temp_exp_res_yr)
+
+temp_obs_results_yearly <- temp_obs_results_yearly %>% 
+  rename(Year = year,
+         K= total_ksi)
+
+# Rename these columns in "temp_exp_res_yr", so they match with "temp_obs_results_yearly" and select only these needed 5 columns
+temp_exp_res_yr <- temp_exp_res_yr %>% 
+  rename(Window = w,
+         Exp_pct = coverage_pct, 
+         CI_lower_pct = ci_lower,
+         CI_upper_pct = ci_upper, 
+         coverage_type = type,
+         Year = year) %>% 
+  select(Year, K, Window,Exp_pct, CI_lower_pct, CI_upper_pct, coverage_type)
+
+
+# Rename values of Window for consistency
+temp_exp_res_yr <- temp_exp_res_yr %>% 
+  mutate(Window = recode(Window, 
+                         "3" = "±1 month (w=3)", 
+                         "5" = "±2 months (w=5)",
+                         "7" = "±3 months (w=7)"
+                        ))
+
+# Add "Obs" or "Exp" to confidence intervals' names of columns for clarity
+temp_obs_results_yearly <- temp_obs_results_yearly %>% 
+  rename(CI_lower_pct_obs = CI_lower_pct, 
+         CI_upper_pct_obs = CI_upper_pct)
+
+temp_exp_res_yr <- temp_exp_res_yr %>% 
+  rename( CI_lower_pct_exp = CI_lower_pct, 
+          CI_upper_pct_exp = CI_upper_pct)
+
+# Make all numbers in "temp_exp_res_yr" 2 decimal points
+temp_exp_res_yr$Exp_pct <- round(temp_exp_res_yr$Exp_pct, 2)
+temp_exp_res_yr$CI_lower_pct_exp <- round(temp_exp_res_yr$CI_lower_pct_exp,2)
+temp_exp_res_yr$CI_upper_pct_exp <- round(temp_exp_res_yr$CI_upper_pct_exp,2) 
+
+# Join them
+temp_res_yr_final <- temp_obs_results_yearly %>% 
+  full_join(temp_exp_res_yr, by = c("Year", "K", "Window", "coverage_type"))
+
+# Reorder to have "coverage_type" right after "Window"
+temp_res_yr_final <- temp_res_yr_final %>% 
+  select(Window, coverage_type, everything())
+```
+
+Export this
+
+```{r}
+write_csv(temp_res_yr_final, '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/final outputs/temp_res_yr_final_mont.csv')
+```
+
+## Road Class
+
+From the original centerline dataset, keep only necessary columns, rename for clarity
+
+```{r}
+# View(cl_mont)
+# colnames(cl_mont)
+# unique(cl_mont$CapaCITY_c)
+
+cl_mont_RoadClass <- cl_mont %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(Road_UID, CapaCITY_c) %>% 
+  rename(road_class = CapaCITY_c)
+# table(cl_mont_RoadClass$road_class)
+```
+
+#### KSI distribution by road class
+
+Create "ksi_mont_cov_cl" dataset which includes all KSI cases with coverage status (0 or 1) across different time windows
+
+```{r}
+ksi_mont_cov_RoadClass <- read_csv('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/collisions/Outputs/ksi_mont_cov_RoadClass.csv')
+# ksi_mont_cov_RoadClass
+
+# Join this with cl_mont_RoadClass by "Road_UID"
+ksi_mont_cov_cl <- ksi_mont_cov_RoadClass %>% 
+  left_join(cl_mont_RoadClass, by = "Road_UID")
+
+# Keep necessary columns
+ksi_mont_cov_cl <- ksi_mont_cov_cl %>% 
+  st_drop_geometry() %>% 
+  select(KSI_ID,
+         road_class,
+         temp_3M, 
+         temp_5M, 
+         temp_7M
+         )
+# View(ksi_mont_cov_cl)
+```
+
+```{r}
+ksi_by_class <- ksi_mont_cov_cl %>%
+  st_drop_geometry() %>%
+  group_by(road_class) %>%
+  summarise(n_KSI = n(), .groups = "drop") %>%
+  mutate(pct_KSI = round(100 * n_KSI / sum(n_KSI), 1))
+# View(ksi_by_class)
+
+# Export it
+write_csv(ksi_by_class, '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/road class/Outputs/ksi_by_class.csv')
+```
+
+### Counter density by road class
+
+```{r}
+temp_mont_monthly_roadclass <- temp_mont %>%
+  st_drop_geometry() %>%
+  mutate(
+    month = floor_date(as.Date(month), "month")
+  ) %>%
+  select(Road_UID, month) %>%
+  distinct()
+```
+
+```{r}
+# ── Montreal: temporary counters only ────────────────────────────────────────
+
+## 1. Extract Full Dynamic Study Range
+all_months_mont <- temp_mont_monthly_roadclass$month
+min_study_date_mont <- min(all_months_mont, na.rm = TRUE)
+max_study_date_mont <- max(all_months_mont, na.rm = TRUE)
+total_study_months_mont <- length(seq.Date(min_study_date_mont, 
+                                            max_study_date_mont, 
+                                            by = "month"))
+
+## 2. No deduplication needed — only one counter type
+# Join centreline to assign road class
+combined_active_cl_mont <- temp_mont_monthly_roadclass %>%
+  dplyr::select(Road_UID, month) %>%
+  distinct() %>%
+  left_join(
+    cl_mont_RoadClass %>% dplyr::select(Road_UID, road_class),
+    by = "Road_UID"
+  ) %>%
+  filter(!is.na(road_class))
+
+## 3. Calculate Capacity per Road Class
+cl_class_capacity_mont <- cl_mont_RoadClass %>%
+  filter(!is.na(road_class)) %>%
+  group_by(road_class) %>%
+  summarise(
+    total_segments = n_distinct(Road_UID),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    total_possible_road_months = total_segments * total_study_months_mont
+  )
+
+## 4. Compute Coverage Columns
+counter_events_by_class_mont <- combined_active_cl_mont %>%
+  group_by(road_class) %>%
+  summarise(
+    total_monitored_road_months = n(),
+    .groups = "drop"
+  ) %>%
+  right_join(cl_class_capacity_mont, by = "road_class") %>%
+  replace_na(list(total_monitored_road_months = 0)) %>%
+  mutate(
+    pct_combined_network_coverage = round(
+      100 * total_monitored_road_months / total_possible_road_months, 2
+    ),
+    pct_counter_activity = round(
+      100 * total_monitored_road_months / sum(total_monitored_road_months), 2
+    )
+  ) %>%
+  arrange(desc(pct_combined_network_coverage))
+
+print(counter_events_by_class_mont)
+
+write.csv(counter_events_by_class_mont,
+          '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/road class/outputs/counter_events_by_class_mont.csv')
+```
+
+### Observed Coverage
+
+```{r}
+# colnames(ksi_mont_cov_cl)
+
+obs_by_class <- ksi_mont_cov_cl %>%
+  group_by(road_class) %>%
+  summarise(
+    total_KSI    = n(),
+
+    n_covered_3M = sum(temp_3M, na.rm = TRUE),
+    cov_3M_pct   = round(100 * n_covered_3M / total_KSI, 2),
+    cov_3M_CI_lo = round(binom.test(n_covered_3M, total_KSI)$conf.int[1] * 100, 2),
+    cov_3M_CI_hi = round(binom.test(n_covered_3M, total_KSI)$conf.int[2] * 100, 2),
+
+    n_covered_5M = sum(temp_5M, na.rm = TRUE),
+    cov_5M_pct   = round(100 * n_covered_5M / total_KSI, 2),
+    cov_5M_CI_lo = round(binom.test(n_covered_5M, total_KSI)$conf.int[1] * 100, 2),
+    cov_5M_CI_hi = round(binom.test(n_covered_5M, total_KSI)$conf.int[2] * 100, 2),
+
+    n_covered_7M = sum(temp_7M, na.rm = TRUE),
+    cov_7M_pct   = round(100 * n_covered_7M / total_KSI, 2),
+    cov_7M_CI_lo = round(binom.test(n_covered_7M, total_KSI)$conf.int[1] * 100, 2),
+    cov_7M_CI_hi = round(binom.test(n_covered_7M, total_KSI)$conf.int[2] * 100, 2),
+
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_KSI))
+
+# View(obs_by_class)
+
+# Export
+write_csv(obs_by_class, '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/road class/Outputs/obs_by_class.csv')
+```
+
+### Expected Coverage
+
+```{r}
+# colnames(temp_mont_monthly)
+
+covered_per_month_temp_class <- temp_mont_monthly %>%
+  left_join(cl_mont_RoadClass %>% dplyr::select(Road_UID, road_class),
+            by = "Road_UID") %>%
+  filter(!is.na(road_class)) %>%
+  group_by(road_class, month) %>%
+  summarise(
+    c_t = n_distinct(location_name),
+    u_t = n_distinct(Road_UID),
+    .groups = "drop"
+  ) %>%
+  mutate(g_t = if_else(c_t == 0, 0, u_t / c_t))
+
+# Mean g_t per road class (months with active counters only)
+g_t_temp_class <- covered_per_month_temp_class %>%
+  filter(c_t > 0) %>%
+  group_by(road_class) %>%
+  summarise(g_t_temp = mean(g_t, na.rm = TRUE), .groups = "drop")
+
+# View both
+g_t_temp_class
+```
+
+```{r}
+cluster_tbl_class <- cluster_tbl %>%
+  left_join(cl_mont_RoadClass,
+            by = c("segment_id" = "Road_UID")) %>%
+  filter(!is.na(road_class))
+
+# Then for each road class separately
+road_classes <- unique(cluster_tbl_class$road_class)
+
+exp_by_class_list <- lapply(road_classes, function(rc) {
+  
+  cluster_rc <- cluster_tbl_class %>% filter(road_class == rc)
+  
+  # Road-class-specific S
+  S_class <- cl_mont_RoadClass %>%
+    filter(road_class == rc) %>%
+    pull(Road_UID) %>% 
+    n_distinct()  # number of segments in this class
+  
+  # Road-class-specific g_t
+  g_t_temp_rc <- g_t_temp_class %>%
+    filter(road_class == rc) %>%
+    pull(g_t_temp)
+  
+  # Handle road classes with no counters
+  if (length(g_t_temp_rc) == 0) g_t_temp_rc <- 0
+
+  # Road-class-specific c_P_t and c_R_t per month
+  c_R_class <- covered_per_month_temp_class %>%
+    filter(road_class == rc) %>%
+    dplyr::select(month, c_R_class_t = c_t)
+
+  # Join to monthly_input
+  monthly_input_class <- monthly_input %>%
+    left_join(c_R_class, by = "month") %>%
+    mutate(
+      c_R_class_t = replace_na(c_R_class_t, 0),
+      gR_t = g_t_temp_rc
+    )
+  
+  monthly_cov_class <- monthly_input_class %>%
+    mutate(qR_t = 1 - (1 - gR_t / S_class) ^ c_R_class_t)
+  
+  res3 <- compute_coverage_summary(monthly_cov_class, cluster_rc, w = 3)
+  res5 <- compute_coverage_summary(monthly_cov_class, cluster_rc, w = 5)
+  res7 <- compute_coverage_summary(monthly_cov_class, cluster_rc, w = 7)
+  
+  bind_rows(
+    res3$overall_by_type,
+    res5$overall_by_type,
+    res7$overall_by_type
+  ) %>%
+    mutate(road_class = rc)
+})
+
+# ── Bind all road class results ───────────────────────────────────────────────
+exp_by_class <- bind_rows(exp_by_class_list)
+
+# ── Filter to combined counter type and format ────────────────────────────────
+exp_by_class_clean <- exp_by_class %>%
+  mutate(
+    Window = case_when(
+      w == 3 ~ "±1 month (w=3)",
+      w == 5 ~ "±2 months (w=5)",
+      w == 7 ~ "±3 months (w=7)"
+    ),
+    exp_pct   = round(pooled_coverage_pct, 2),
+    exp_CI_lo = round(ci_lower, 2),
+    exp_CI_hi = round(ci_upper, 2)
+  ) %>%
+  dplyr::select(road_class, Window, exp_pct, exp_CI_lo, exp_CI_hi)
+
+View(exp_by_class_clean)
+
+# Export this
+write.csv(exp_by_class_clean, '/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/road class/Outputs/exp_by_class.csv')
+```

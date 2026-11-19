@@ -1,0 +1,98 @@
+
+*How Many are At-Risk: Assessing the Coverage of Traffic Volume Counters in Canadian Cities*
+
+**Objectives: To assess the spatial and temporal coverage of killed or seriously injured victims by permanent or temporary counters in Montreal, Toronto, and Calgary**
+
+**Abbreviations: **
+KSI = killed or seriously injured
+
+**NOTE**
+When I write for example ksi_CITY.. it means CITY is reaplaced with the name of actual cities like tor (Toronto) or the same things for counters for exmaple perm_CITY_unique
+CITY could be tor (Toronto) or cal (Calgary)
+
+##### Centerlines ------------------------------------------------------------
+Our GIS analyst, used the centerlines of cities available on the city websites, and cleaned them
+to remove non-road elements as well as freeways and expressways. Thus, this datasets is not publicly available
+as these were created for the broader CapaCITY project. 
+For each road segment in these datasets, relevant attributes such as road class and geomert were included. 
+
+##### Collision datasets ------------------------------------------------------------
+
+## Victim-level not collision level
+For all cities, victim-level datasets were used. For exmaple, a collision could have more than 1 injured person.
+By considering victim-level we take into account all injured individuals rather than one collision.
+
+Note for Montreal: The island of Montreal includes the City of Montreal and 15 independant municpalities. 
+Our study only included the City, so as showin the codes both for KSI and counters, these 15 municpalities were found and 
+excluded to focus only on the City of Montreal. 
+
+
+## Join KSIs with centerline
+Each KSI was joined to their nearest road segment to have that road segment attributes.
+
+## ksi_CITY_seg_month
+For each ksi_CITY, *ksi_CITY_seg_month* was created. For variance calculations, sum of ksi per month and road segment
+is required and this dataset will be used in the Step 5 of Expected Coverage calculation.
+i.e., numebr of KSIs in each segment in one month (i.e., segment-month). This is important as one segment-month with 5 KSIs 
+should be treated differently that one segment-month with 1 KSI.
+
+
+*If imported datasets were collision-level, we conerted them to victim-level*. 
+
+Date period was based on the start of Vizion Zero plan in each city, meaning that the first full-year was considered as the
+first year until the most available date. 
+
+##### Permanent Counters ------------------------------------------------------------
+I will explain the general guideline here, and some steps that were specific to each city below.
+
+The points of all the codes in this section was to create *perm_CITY_unique*, which includes unique
+permanent counters with a unique ID for each of them, and a column specifying the type of them
+(so after combining them with temporary counters, it is clear these are permanent counters). A 10-meter buffer
+was created around each counter to specify the covered road segments by each counter. 
+
+For Toronto and Calgary, permanent counters were used in our analysis. Since our approach depended on what we have here,
+I will explain what the codes did for these cities in 2 Categories for these 2 Cities.
+
+For Toronto, Miovision counters are used as permanent counters and this data was directly received from the city of toronto, so we 
+cannot share them publicly. You may request this data directly by contacting transportation team of the city. 
+Miovision counters are located on the intersections of Toronto and after we found the location of 6 of these conters are not exact, 
+we manually extracted the coordinates of these counters so we have the ecact location of all of these counters for our analyis.
+
+#### Temporary Counters ------------------------------------------------------------
+*temp_CITY_unique* was created for each city to have unique temporay counter with a 10-meter buffer to determine the covered road segments by each of these counters.
+
+
+#### c_P_t and c_R_t --------------------------------------------------------------------------------------------------
+These are counts of permanent (c_R_t) and temporary (c_R_t) counters in each month. R stands for rotating (i.e., temporary)
+
+Created datasets in order in these codes:
+
+*counter_merge*: For cities with both permanent and temporary counters, these were merged and this dataset was created.
+
+*months_df*: a list of all months for each city in the study. 
+
+*counter_clean*: a clean version of *counter_merge* where those rows with missing counter_id or start and end months were excluded.
+
+*monthly_new_perm*: For cities with permanent counters, we wanted to created "new_perm_t", which is the number of new permanent counters
+in each month, and for those months without a new permanent counter installed, the missing NA was replaced with 0. This dataset was
+resulted from joining *counter_clean* AND *months_df*. 
+
+*counter_months*: In the *counter_clean*, we had one row per permanent counter with start and end months, but we want
+one row per month of an active counter. Thus, for temporary counters, as the start and end months were the same, the new created
+'month' column here shows the same date as those columns but for permanent counters, every row is broken down into all months
+that counter has been active.
+
+*monthly_active_counters*: number of active counters in each month.
+
+*monthly_counter_deployment*: created from joining *months_df* AND *monthly_new_perm* AND *monthly_active_counters* to have
+both months with and without an active counter.
+
+#### Observed Coverage --------------------------------------------------------------------------------------------------
+Explanation in the codes are clear to follow to logic. For each type of counter, both average (for Table 1) and yearly (for the line graph)
+were calculated. 
+
+#### Expected Coverage --------------------------------------------------------------------------------------------------
+In the Step 2, the reason we used log transforamtion of CI is that after running the codes for the first time, we saw some negetive CI
+which does not make sense for probabilities. Thus, we used log transformation to avoid this issue.
+
+

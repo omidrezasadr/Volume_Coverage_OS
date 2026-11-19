@@ -1,0 +1,361 @@
+---
+title: "Coverage_Apr2026"
+author: "Omidreza Sadrmanesh"
+date: "2026-04-05"
+output: html_document
+---
+
+## Packages
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(sf)
+library(ggspatial)
+library(prettymapr)
+library(tmap)
+library(mapedit)
+library(leaflet)
+library(terra)
+library(RColorBrewer)
+library(viridis)
+library(readxl)
+library(ggmap)
+library(tidygeocoder)
+library(writexl)
+library(plotly)
+library(usethis)
+library(stringr)
+library(kableExtra)
+library(webshot2)
+library(ggrepel)
+library(jsonlite)
+library(openxlsx)
+library(htmlwidgets)
+library(nngeo)
+library(conflicted)
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("recode", "dplyr")
+```
+
+## Import datasets
+
+```{r}
+mont <- read_csv('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Montreal/Datasets/final outputs/temp_res_yr_final_mont.csv')
+tor <- read_csv('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Toronto/Datasets/final outputs/combined_results_yearly_final.csv')
+cal <- read_csv('/Users/omidrezasadrmanesh/Desktop/TMU/PROJECTS/VOLUME/Calgary/Datasets/final outputs/combined_results_yearly_final.csv')
+
+mont <- mont %>% mutate(city = "Montreal")
+tor  <- tor  %>% mutate(city = "Toronto")
+cal  <- cal  %>% mutate(city = "Calgary")
+
+all_cities_cov <- bind_rows(mont, tor, cal)
+
+# Assumes each source file is already in the LONG format seen in your data
+# viewer: one row per city / coverage_type / Window / Year, with columns
+# Window, coverage_type, Year, K, Observed_pct, CI_lower_pct_obs,
+# CI_upper_pct_obs, Exp_pct, CI_lower_pct_exp, CI_upper_pct_exp, city.
+
+all_cities_plot <- all_cities_cov %>%
+  mutate(city = case_when(
+    city == "Toronto"  ~ "Toronto (2017-2024)",
+    city == "Calgary"  ~ "Calgary (2019-2024)",
+    city == "Montreal" ~ "Montreal (2017-2021)",
+    TRUE ~ city
+  )) %>%
+  mutate(city = factor(city, levels = c(
+    "Montreal (2017-2021)",
+    "Toronto (2017-2024)",
+    "Calgary (2019-2024)"
+  )))
+```
+
+## Shared helpers
+
+```{r}
+window_levels <- c("±1 month (w=3)", "±2 months (w=5)", "±3 months (w=7)")
+window_labels  <- c("3 Months", "5 Months", "7 Months")
+
+prep_coverage_data <- function(data) {
+  df <- data %>%
+    mutate(window = factor(Window, levels = window_levels, labels = window_labels))
+  lines <- df %>%
+    dplyr::select(Year, city, window, Observed_pct, Exp_pct) %>%
+    pivot_longer(cols = c(Observed_pct, Exp_pct),
+                 names_to = "type", values_to = "value") %>%
+    mutate(type = recode(type,
+                         "Observed_pct" = "Observed",
+                         "Exp_pct"      = "Expected"))
+  ci <- df %>%
+    dplyr::select(Year, city, window,
+                  CI_lower_pct_obs, CI_upper_pct_obs,
+                  CI_lower_pct_exp, CI_upper_pct_exp) %>%
+    pivot_longer(
+      cols      = -c(Year, city, window),
+      names_to  = c(".value", "type"),
+      names_pattern = "(CI_lower_pct|CI_upper_pct)_(obs|exp)"
+    ) %>%
+    rename(lo = CI_lower_pct, hi = CI_upper_pct) %>%
+    mutate(type = recode(type, "obs" = "Observed", "exp" = "Expected")) %>%
+    filter(!is.na(lo), !is.na(hi))
+  list(lines = lines, ci = ci)
+}
+
+plot_coverage_9panel <- function(lines, ci) {
+
+  ci_obs <- ci %>% filter(type == "Observed")
+  ci_exp <- ci %>% filter(type == "Expected")
+
+  ggplot(lines, aes(Year, value, colour = type, linetype = type)) +
+
+    # Expected CI first so observed renders on top
+    geom_ribbon(data = ci_exp,
+                aes(x = Year, ymin = lo, ymax = hi),
+                fill = "grey70", alpha = 0.35,
+                colour = "grey40", linetype = "dashed", linewidth = 0.6,
+                inherit.aes = FALSE) +
+
+    # Observed CI
+    geom_ribbon(data = ci_obs,
+                aes(x = Year, ymin = lo, ymax = hi),
+                fill = "#E15759", alpha = 0.18,
+                colour = NA, inherit.aes = FALSE) +
+
+    geom_line(linewidth = 1.0) +
+    geom_point(aes(shape = type), size = 1.8) +
+
+    scale_colour_manual(
+      values = c("Observed" = "#E15759", "Expected" = "#4E79A7"),
+      name = "Coverage"
+    ) +
+    scale_linetype_manual(
+      values = c("Observed" = "solid", "Expected" = "dashed"),
+      name = "Coverage"
+    ) +
+    scale_shape_manual(
+      values = c("Observed" = 16, "Expected" = 21),
+      name = "Coverage"
+    ) +
+
+    facet_grid(window ~ city, scales = "free_x") +
+
+    labs(
+      x = "Year", y = "KSI Coverage (%)",
+      caption = "Shaded bands = 95% CI  |  Red fill = Observed  ·  Grey dashed outline = Expected"
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(
+      legend.position    = "right",
+      legend.key.width   = unit(1.2, "cm"),
+      strip.text.x       = element_text(size = 12, face = "bold",
+                                        margin = margin(b = 4, t = 4)),
+      strip.text.y       = element_text(size = 11, face = "bold",
+                                        margin = margin(l = 4, r = 4)),
+      panel.border       = element_rect(colour = "grey70", fill = NA),
+      strip.background   = element_rect(fill = "grey95", colour = "grey70"),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+      plot.caption       = element_text(size = 9, colour = "grey40", hjust = 0)
+    )
+}
+```
+
+## Either temporary or permanent counters plot
+
+```{r}
+# Montreal has no "either" rows, so use its "temporary" rows as the stand-in
+# for that city in this plot (temporary is its only counter type).
+any_source <- bind_rows(
+  all_cities_plot %>% filter(!str_detect(city, "Montreal"), coverage_type == "either"),
+  all_cities_plot %>% filter(str_detect(city, "Montreal"),  coverage_type == "temporary")
+)
+
+any_data <- prep_coverage_data(any_source)
+plot_coverage_9panel(any_data$lines, any_data$ci)
+
+ggsave("coverage_any_3cities.png", width = 12, height = 8, dpi = 600, bg = "white")
+```
+
+For Linda's Poster: Toronto Only
+
+```{r}
+# 1. Filter data for Toronto AND select coverage type
+plot_tor <- all_cities_plot %>% 
+  filter(
+    str_detect(city, "Toronto"), 
+    coverage_type == "either" # Adjust coverage_type if needed
+  )
+
+# 2. Prep data using your function
+tor_data <- prep_coverage_data(plot_tor)
+
+# 3. Create a dedicated single-city plot function with Windows as Columns
+plot_coverage_toronto <- function(lines, ci) {
+  
+  ci_obs <- ci %>% filter(type == "Observed")
+  ci_exp <- ci %>% filter(type == "Expected")
+
+  ggplot(lines, aes(Year, value, colour = type, linetype = type)) +
+
+    # Expected CI
+    geom_ribbon(data = ci_exp,
+                aes(x = Year, ymin = lo, ymax = hi),
+                fill = "grey70", alpha = 0.35,
+                colour = "grey40", linetype = "dashed", linewidth = 0.6,
+                inherit.aes = FALSE) +
+
+    # Observed CI
+    geom_ribbon(data = ci_obs,
+                aes(x = Year, ymin = lo, ymax = hi),
+                fill = "#E15759", alpha = 0.18,
+                colour = NA, inherit.aes = FALSE) +
+
+    geom_line(linewidth = 1.0) +
+    geom_point(aes(shape = type), size = 1.8) +
+
+    scale_colour_manual(
+      values = c("Observed" = "#E15759", "Expected" = "#4E79A7"),
+      name = "Coverage"
+    ) +
+    scale_linetype_manual(
+      values = c("Observed" = "solid", "Expected" = "dashed"),
+      name = "Coverage"
+    ) +
+    scale_shape_manual(
+      values = c("Observed" = 16, "Expected" = 21),
+      name = "Coverage"
+    ) +
+
+    # MONTHS/WINDOWS ARE NOW TOP COLUMNS:
+    facet_grid(. ~ window, scales = "free_x") +
+
+    labs(
+      x = "Year", y = "KSI Coverage (%)",
+      caption = "Shaded bands = 95% CI  |  Red fill = Observed  ·  Grey dashed outline = Expected"
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(
+      legend.position    = "right",
+      legend.key.width   = unit(1.2, "cm"),
+      strip.text.x       = element_text(size = 12, face = "bold", margin = margin(b = 4, t = 4)),
+      panel.border       = element_rect(colour = "grey70", fill = NA),
+      strip.background   = element_rect(fill = "grey95", colour = "grey70"),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+      plot.caption       = element_text(size = 9, colour = "grey40", hjust = 0)
+    )
+}
+
+# 4. Generate & Save Plot
+p_tor <- plot_coverage_toronto(tor_data$lines, tor_data$ci)
+print(p_tor)
+
+# Adjust height since it is only 1 row now
+ggsave("coverage_toronto_only.png", plot = p_tor, width = 11, height = 4.5, dpi = 600, bg = "white")
+```
+
+Windows on the side
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# 1. Filter for Toronto and select the relevant coverage type
+plot_tor <- all_cities_plot %>% 
+  filter(
+    str_detect(city, "Toronto"), 
+    coverage_type == "either"  # Adjust if a different coverage_type was used in Fig 4
+  )
+
+# 2. Prepare data
+tor_data <- prep_coverage_data(plot_tor)
+
+# 3. Build Figure 4 specifically for Toronto with windows along the side
+plot_fig4_toronto <- function(lines, ci) {
+  
+  ci_obs <- ci %>% filter(type == "Observed")
+  ci_exp <- ci %>% filter(type == "Expected")
+
+  ggplot(lines, aes(Year, value, colour = type, linetype = type)) +
+
+    # Expected CI (grey)
+    geom_ribbon(data = ci_exp,
+                aes(x = Year, ymin = lo, ymax = hi),
+                fill = "grey70", alpha = 0.35,
+                colour = "grey40", linetype = "dashed", linewidth = 0.6,
+                inherit.aes = FALSE) +
+
+    # Observed CI (red)
+    geom_ribbon(data = ci_obs,
+                aes(x = Year, ymin = lo, ymax = hi),
+                fill = "#E15759", alpha = 0.18,
+                colour = NA, inherit.aes = FALSE) +
+
+    geom_line(linewidth = 1.0) +
+    geom_point(aes(shape = type), size = 1.8) +
+
+    scale_colour_manual(
+      values = c("Observed" = "#E15759", "Expected" = "#4E79A7"),
+      name = "Coverage"
+    ) +
+    scale_linetype_manual(
+      values = c("Observed" = "solid", "Expected" = "dashed"),
+      name = "Coverage"
+    ) +
+    scale_shape_manual(
+      values = c("Observed" = 16, "Expected" = 21),
+      name = "Coverage"
+    ) +
+
+    # WINDOWS ALONG THE SIDE (Rows = window, Columns = none)
+    facet_grid(window ~ ., scales = "free_x") +
+
+    labs(
+      x = "Year", 
+      y = "KSI Coverage (%)",
+      caption = "Shaded bands = 95% CI  |  Red fill = Observed  ·  Grey dashed outline = Expected"
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(
+      legend.position    = "right",
+      legend.key.width   = unit(1.2, "cm"),
+      strip.text.y       = element_text(size = 11, face = "bold", margin = margin(l = 4, r = 4)),
+      panel.border       = element_rect(colour = "grey70", fill = NA),
+      strip.background   = element_rect(fill = "grey95", colour = "grey70"),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+      plot.caption       = element_text(size = 9, colour = "grey40", hjust = 0)
+    )
+}
+
+# 4. Generate plot and save with a tall aspect ratio
+fig4_toronto <- plot_fig4_toronto(tor_data$lines, tor_data$ci)
+fig4_toronto
+
+ggsave("Figure4_Toronto_Only.png", plot = fig4_toronto, width = 7, height = 9, dpi = 600, bg = "white")
+```
+
+## Temporary counters plot
+
+```{r}
+temp_source <- all_cities_plot %>% filter(coverage_type == "temporary")
+
+temp_data <- prep_coverage_data(temp_source)
+plot_coverage_9panel(temp_data$lines, temp_data$ci)
+# ggsave("coverage_temp_3cities.png", width = 12, height = 8, dpi = 300, bg = "white")
+```
+
+## Permanent counters plot
+
+```{r}
+# Montreal has no permanent counters -> exclude it. str_detect avoids the
+# accent/dash mismatch that silently broke the exact-string filter before.
+perm_source <- all_cities_plot %>%
+  filter(!str_detect(city, "Montreal"), coverage_type == "permanent")
+
+perm_data <- prep_coverage_data(perm_source)
+plot_coverage_9panel(perm_data$lines, perm_data$ci)
+#ggsave("coverage_perm_3cities.png", width = 12, height = 8, dpi = 300, bg = "white")
+```
